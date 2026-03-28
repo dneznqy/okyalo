@@ -10,11 +10,17 @@ if ! command -v java &> /dev/null; then
     exit 1
 fi
 
-# Check Python3
-if ! command -v python3 &> /dev/null; then
-    echo "ERROR: Python3 not found."
+# Detect python command (python3 on Linux/Mac, python on Windows)
+PYTHON=""
+if command -v python3 &> /dev/null; then
+    PYTHON=python3
+elif command -v python &> /dev/null; then
+    PYTHON=python
+else
+    echo "ERROR: Python not found. Install Python 3 first."
     exit 1
 fi
+echo "Using: $PYTHON ($("$PYTHON" --version 2>&1))"
 
 WORK_DIR="$(pwd)/apk_work"
 mkdir -p "$WORK_DIR"
@@ -31,7 +37,7 @@ fi
 # Download OLD APK (reference)
 if [ ! -f old_app.apk ]; then
     echo "[2/7] Downloading X-431 PAD VII APK (reference ~134MB)..."
-    DL_URL=$(curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/d/bUGT4-8JBq2R_w" | python3 -c "import sys,json; print(json.load(sys.stdin)['href'])")
+    DL_URL=$(curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/d/bUGT4-8JBq2R_w" | "$PYTHON" -c "import sys,json; print(json.load(sys.stdin)['href'])")
     curl -L --progress-bar -o old_app.apk "$DL_URL"
 else
     echo "[2/7] old_app.apk already exists"
@@ -40,7 +46,7 @@ fi
 # Download NEW APK (to modify)
 if [ ! -f new_app.apk ]; then
     echo "[3/7] Downloading X-PRO5 APK (to modify ~144MB)..."
-    DL_URL=$(curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/d/5yWPLj7L_0Q9qw" | python3 -c "import sys,json; print(json.load(sys.stdin)['href'])")
+    DL_URL=$(curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/d/5yWPLj7L_0Q9qw" | "$PYTHON" -c "import sys,json; print(json.load(sys.stdin)['href'])")
     curl -L --progress-bar -o new_app.apk "$DL_URL"
 else
     echo "[3/7] new_app.apk already exists"
@@ -75,7 +81,6 @@ sed -i.bak 's|android:scaleType="fitCenter"|android:scaleType="fitXY"|' new_deco
 echo "   [OK] Layout scaleType fixed (fitCenter -> fitXY)"
 
 # 5) Fix ALL old-style custom attribute namespaces that cause apktool build errors
-#    Replace package-specific namespace with res-auto
 echo "   Fixing custom attribute namespaces..."
 COUNT=0
 for f in $(grep -rl 'http://schemas.android.com/apk/res/com\.cnlaunch' new_decoded/res/ 2>/dev/null || true); do
@@ -93,9 +98,8 @@ if java -jar apktool.jar b new_decoded -o X-PRO5_modified_unsigned.apk; then
     echo "   [OK] APK rebuilt successfully"
 else
     echo ""
-    echo "ERROR: APK build failed! Showing last errors:"
-    echo "Try running: java -jar apk_work/apktool.jar b apk_work/new_decoded -o output.apk"
-    echo "to see the full error output."
+    echo "ERROR: APK build failed!"
+    echo "Try running manually: java -jar apk_work/apktool.jar b apk_work/new_decoded -o output.apk"
     exit 1
 fi
 

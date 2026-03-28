@@ -10,21 +10,36 @@ if ! command -v java &> /dev/null; then
     exit 1
 fi
 
-# Detect python command (python3 on Linux/Mac, python on Windows)
+# Detect working python command
+# On Windows, 'python3' may be a Microsoft Store stub that doesn't actually work
 PYTHON=""
-if command -v python3 &> /dev/null; then
-    PYTHON=python3
-elif command -v python &> /dev/null; then
-    PYTHON=python
-else
-    echo "ERROR: Python not found. Install Python 3 first."
+for cmd in python python3; do
+    if command -v $cmd &> /dev/null; then
+        # Verify it actually runs (Windows Store stub won't return a version)
+        VER=$($cmd --version 2>&1 || true)
+        if echo "$VER" | grep -q 'Python 3'; then
+            PYTHON=$cmd
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: Working Python 3 not found."
+    echo "Install Python 3 from https://www.python.org/downloads/"
+    echo "Make sure to check 'Add to PATH' during installation."
     exit 1
 fi
-echo "Using: $PYTHON ($("$PYTHON" --version 2>&1))"
+echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
 
 WORK_DIR="$(pwd)/apk_work"
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
+
+# Helper: extract download URL from Yandex Disk
+get_ya_url() {
+    curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=$1" | "$PYTHON" -c "import sys,json; print(json.load(sys.stdin)['href'])"
+}
 
 # Download apktool if not present
 if [ ! -f apktool.jar ]; then
@@ -37,7 +52,7 @@ fi
 # Download OLD APK (reference)
 if [ ! -f old_app.apk ]; then
     echo "[2/7] Downloading X-431 PAD VII APK (reference ~134MB)..."
-    DL_URL=$(curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/d/bUGT4-8JBq2R_w" | "$PYTHON" -c "import sys,json; print(json.load(sys.stdin)['href'])")
+    DL_URL=$(get_ya_url "https://disk.yandex.ru/d/bUGT4-8JBq2R_w")
     curl -L --progress-bar -o old_app.apk "$DL_URL"
 else
     echo "[2/7] old_app.apk already exists"
@@ -46,7 +61,7 @@ fi
 # Download NEW APK (to modify)
 if [ ! -f new_app.apk ]; then
     echo "[3/7] Downloading X-PRO5 APK (to modify ~144MB)..."
-    DL_URL=$(curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/d/5yWPLj7L_0Q9qw" | "$PYTHON" -c "import sys,json; print(json.load(sys.stdin)['href'])")
+    DL_URL=$(get_ya_url "https://disk.yandex.ru/d/5yWPLj7L_0Q9qw")
     curl -L --progress-bar -o new_app.apk "$DL_URL"
 else
     echo "[3/7] new_app.apk already exists"

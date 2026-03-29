@@ -90,7 +90,11 @@ echo "   [OK] Layout scaleType fixed"
 sed -i.bak 's|versionName: 8.00.222|versionName: 8.00.254|' client_decoded/apktool.yml
 echo "   [OK] Version: 8.00.222 -> 8.00.254"
 
-# 5) Namespace fix
+# 5) Make NFC optional (allows install on phones without NFC)
+sed -i.bak 's|<uses-feature android:name="android.hardware.nfc.hce"/>|<uses-feature android:name="android.hardware.nfc.hce" android:required="false"/>|' client_decoded/AndroidManifest.xml
+echo "   [OK] NFC set to optional"
+
+# 6) Namespace fix
 COUNT=0
 for f in $(grep -rl 'http://schemas.android.com/apk/res/com\.cnlaunch' client_decoded/res/ 2>/dev/null || true); do
     sed -i.bak 's|http://schemas.android.com/apk/res/com\.cnlaunch\.[a-zA-Z0-9.]*|http://schemas.android.com/apk/res-auto|g' "$f"

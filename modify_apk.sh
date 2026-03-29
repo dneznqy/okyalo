@@ -11,11 +11,9 @@ if ! command -v java &> /dev/null; then
 fi
 
 # Detect working python command
-# On Windows, 'python3' may be a Microsoft Store stub that doesn't actually work
 PYTHON=""
 for cmd in python python3; do
     if command -v $cmd &> /dev/null; then
-        # Verify it actually runs (Windows Store stub won't return a version)
         VER=$($cmd --version 2>&1 || true)
         if echo "$VER" | grep -q 'Python 3'; then
             PYTHON=$cmd
@@ -27,7 +25,6 @@ done
 if [ -z "$PYTHON" ]; then
     echo "ERROR: Working Python 3 not found."
     echo "Install Python 3 from https://www.python.org/downloads/"
-    echo "Make sure to check 'Add to PATH' during installation."
     exit 1
 fi
 echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
@@ -67,12 +64,15 @@ else
     echo "[3/7] new_app.apk already exists"
 fi
 
-# Decompile both
-echo "[4/7] Decompiling APKs (this takes a few minutes)..."
-echo "  Decompiling old APK..."
+# Decompile OLD (full, to extract resources)
+echo "[4/7] Decompiling APKs..."
+echo "  Decompiling old APK (full)..."
 java -jar apktool.jar d old_app.apk -o old_decoded -f
-echo "  Decompiling new APK..."
-java -jar apktool.jar d new_app.apk -o new_decoded -f
+
+# Decompile NEW with --no-src to PRESERVE original dex/code
+# This is critical: the APK uses StubApp packer, full decompile breaks it
+echo "  Decompiling new APK (resources only, preserving code)..."
+java -jar apktool.jar d new_app.apk -o new_decoded --no-src -f
 
 # Apply modifications
 echo "[5/7] Applying modifications..."
@@ -95,7 +95,7 @@ echo "   [OK] Logo assets replaced"
 sed -i.bak 's|android:scaleType="fitCenter"|android:scaleType="fitXY"|' new_decoded/res/layout/layout_splash.xml
 echo "   [OK] Layout scaleType fixed (fitCenter -> fitXY)"
 
-# 5) Fix ALL old-style custom attribute namespaces that cause apktool build errors
+# 5) Fix custom attribute namespaces for build compatibility
 echo "   Fixing custom attribute namespaces..."
 COUNT=0
 for f in $(grep -rl 'http://schemas.android.com/apk/res/com\.cnlaunch' new_decoded/res/ 2>/dev/null || true); do
@@ -107,14 +107,12 @@ echo "   [OK] Fixed namespaces in $COUNT files"
 # Clean up .bak files
 find new_decoded -name "*.bak" -delete 2>/dev/null || true
 
-# Rebuild
-echo "[6/7] Rebuilding APK..."
-if java -jar apktool.jar b new_decoded -o X-PRO5_modified_unsigned.apk; then
+# Rebuild (dex files are copied as-is, not recompiled)
+echo "[6/7] Rebuilding APK (preserving original code)..."
+if java -jar apktool.jar b new_decoded -o X-PRO5_modified.apk; then
     echo "   [OK] APK rebuilt successfully"
 else
-    echo ""
     echo "ERROR: APK build failed!"
-    echo "Try running manually: java -jar apk_work/apktool.jar b apk_work/new_decoded -o output.apk"
     exit 1
 fi
 
@@ -128,17 +126,28 @@ fi
 
 jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
     -keystore release.keystore -storepass android -keypass android \
-    X-PRO5_modified_unsigned.apk release
+    X-PRO5_modified.apk release
+
+# Verify dex integrity
+echo ""
+echo "=== Verifying code integrity ==="
+ORIG_MD5=$(unzip -p new_app.apk classes.dex | md5sum | cut -d' ' -f1)
+MOD_MD5=$(unzip -p X-PRO5_modified.apk classes.dex | md5sum | cut -d' ' -f1)
+if [ "$ORIG_MD5" = "$MOD_MD5" ]; then
+    echo "   [OK] DEX code is identical to original (md5: $ORIG_MD5)"
+else
+    echo "   [WARNING] DEX code differs! Original: $ORIG_MD5, Modified: $MOD_MD5"
+fi
 
 # Copy final file
-cp X-PRO5_modified_unsigned.apk "../X-PRO5_8.00.222_sign_rebranded.apk"
+cp X-PRO5_modified.apk "../X-PRO5_8.00.222_sign.apk"
 
 echo ""
 echo "========================================"
 echo "  DONE! Modified APK is ready."
 echo "========================================"
 echo ""
-echo "File: $(cd .. && pwd)/X-PRO5_8.00.222_sign_rebranded.apk"
-echo "Size: $(du -h ../X-PRO5_8.00.222_sign_rebranded.apk | cut -f1)"
+echo "File: $(cd .. && pwd)/X-PRO5_8.00.222_sign.apk"
+echo "Size: $(du -h ../X-PRO5_8.00.222_sign.apk | cut -f1)"
 echo ""
-echo "To install on device:  adb install X-PRO5_8.00.222_sign_rebranded.apk"
+echo "To install on device:  adb install X-PRO5_8.00.222_sign.apk"

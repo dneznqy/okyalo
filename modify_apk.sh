@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== X-PRO5 -> X-431 PAD VII Rebranding Script ==="
+echo "=== PRO VII PAD Elite: splash + version fix ==="
 echo ""
 
 # Check Java
@@ -24,7 +24,6 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo "ERROR: Working Python 3 not found."
-    echo "Install Python 3 from https://www.python.org/downloads/"
     exit 1
 fi
 echo "Using: $PYTHON ($($PYTHON --version 2>&1))"
@@ -33,12 +32,11 @@ WORK_DIR="$(pwd)/apk_work"
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
-# Helper: extract download URL from Yandex Disk
 get_ya_url() {
     curl -sL "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=$1" | "$PYTHON" -c "import sys,json; print(json.load(sys.stdin)['href'])"
 }
 
-# Download apktool if not present
+# Download apktool
 if [ ! -f apktool.jar ]; then
     echo "[1/7] Downloading apktool..."
     curl -sL -o apktool.jar "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar"
@@ -46,73 +44,65 @@ else
     echo "[1/7] apktool.jar already exists"
 fi
 
-# Download OLD APK (reference)
+# Download OLD APK (reference for splash)
 if [ ! -f old_app.apk ]; then
-    echo "[2/7] Downloading X-431 PAD VII APK (reference ~134MB)..."
+    echo "[2/7] Downloading X-431 PAD VII APK (splash source ~134MB)..."
     DL_URL=$(get_ya_url "https://disk.yandex.ru/d/bUGT4-8JBq2R_w")
     curl -L --progress-bar -o old_app.apk "$DL_URL"
 else
     echo "[2/7] old_app.apk already exists"
 fi
 
-# Download NEW APK (to modify)
-if [ ! -f new_app.apk ]; then
-    echo "[3/7] Downloading X-PRO5 APK (to modify ~144MB)..."
-    DL_URL=$(get_ya_url "https://disk.yandex.ru/d/5yWPLj7L_0Q9qw")
-    curl -L --progress-bar -o new_app.apk "$DL_URL"
+# Download CLIENT APK (to modify)
+if [ ! -f client_app.apk ]; then
+    echo "[3/7] Downloading PRO VII PAD Elite APK (to modify ~145MB)..."
+    DL_URL=$(get_ya_url "https://disk.yandex.ru/d/eKzN4xXYBZ3GNg")
+    curl -L --progress-bar -o client_app.apk "$DL_URL"
 else
-    echo "[3/7] new_app.apk already exists"
+    echo "[3/7] client_app.apk already exists"
 fi
 
-# Decompile OLD (full, to extract resources)
+# Decompile
 echo "[4/7] Decompiling APKs..."
-echo "  Decompiling old APK (full)..."
+echo "  Decompiling old APK (for splash resources)..."
 java -jar apktool.jar d old_app.apk -o old_decoded -f
-
-# Decompile NEW with --no-src to PRESERVE original dex/code
-echo "  Decompiling new APK (resources only, preserving code)..."
-java -jar apktool.jar d new_app.apk -o new_decoded --no-src -f
+echo "  Decompiling client APK (resources only, preserving code)..."
+java -jar apktool.jar d client_app.apk -o client_decoded --no-src -f
 
 # Apply modifications
 echo "[5/7] Applying modifications..."
 
-# 1) Change app name
-sed -i.bak 's|<string name="app_name">X-PRO5</string>|<string name="app_name">X-431 PAD VII</string>|' new_decoded/res/values/strings.xml
-echo "   [OK] App name: X-PRO5 -> X-431 PAD VII"
+# 1) Splash screens from old APK
+cp old_decoded/res/drawable/launch_page.png client_decoded/res/drawable/launch_page.png
+cp old_decoded/res/drawable/launch_page_port.png client_decoded/res/drawable/launch_page_port.png
+echo "   [OK] Splash screens replaced (X-431 PAD VII branding)"
 
-# 2) Copy splash screen images from old to new
-cp old_decoded/res/drawable/launch_page.png new_decoded/res/drawable/launch_page.png
-cp old_decoded/res/drawable/launch_page_port.png new_decoded/res/drawable/launch_page_port.png
-echo "   [OK] Splash screens replaced"
-
-# 3) Copy logo assets
-cp old_decoded/assets/logo_h.png new_decoded/assets/logo_h.png
-cp old_decoded/assets/logo_l.png new_decoded/assets/logo_l.png
+# 2) Logo assets
+cp old_decoded/assets/logo_h.png client_decoded/assets/logo_h.png
+cp old_decoded/assets/logo_l.png client_decoded/assets/logo_l.png
 echo "   [OK] Logo assets replaced"
 
-# 4) Fix splash layout scaleType
-sed -i.bak 's|android:scaleType="fitCenter"|android:scaleType="fitXY"|' new_decoded/res/layout/layout_splash.xml
-echo "   [OK] Layout scaleType fixed (fitCenter -> fitXY)"
+# 3) scaleType fix
+sed -i.bak 's|android:scaleType="fitCenter"|android:scaleType="fitXY"|' client_decoded/res/layout/layout_splash.xml
+echo "   [OK] Layout scaleType fixed"
 
-# 5) Make NFC optional (allows install on phones without NFC for testing)
-sed -i.bak 's|<uses-feature android:name="android.hardware.nfc.hce"/>|<uses-feature android:name="android.hardware.nfc.hce" android:required="false"/>|' new_decoded/AndroidManifest.xml
-echo "   [OK] NFC set to optional (allows install on any phone)"
+# 4) Version 222 -> 254
+sed -i.bak 's|versionName: 8.00.222|versionName: 8.00.254|' client_decoded/apktool.yml
+echo "   [OK] Version: 8.00.222 -> 8.00.254"
 
-# 6) Fix custom attribute namespaces for build compatibility
-echo "   Fixing custom attribute namespaces..."
+# 5) Namespace fix
 COUNT=0
-for f in $(grep -rl 'http://schemas.android.com/apk/res/com\.cnlaunch' new_decoded/res/ 2>/dev/null || true); do
+for f in $(grep -rl 'http://schemas.android.com/apk/res/com\.cnlaunch' client_decoded/res/ 2>/dev/null || true); do
     sed -i.bak 's|http://schemas.android.com/apk/res/com\.cnlaunch\.[a-zA-Z0-9.]*|http://schemas.android.com/apk/res-auto|g' "$f"
     COUNT=$((COUNT+1))
 done
 echo "   [OK] Fixed namespaces in $COUNT files"
 
-# Clean up .bak files
-find new_decoded -name "*.bak" -delete 2>/dev/null || true
+find client_decoded -name "*.bak" -delete 2>/dev/null || true
 
-# Rebuild (dex files are copied as-is, not recompiled)
+# Rebuild
 echo "[6/7] Rebuilding APK (preserving original code)..."
-if java -jar apktool.jar b new_decoded -o X-PRO5_modified.apk; then
+if java -jar apktool.jar b client_decoded -o client_fixed.apk; then
     echo "   [OK] APK rebuilt successfully"
 else
     echo "ERROR: APK build failed!"
@@ -129,28 +119,25 @@ fi
 
 jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
     -keystore release.keystore -storepass android -keypass android \
-    X-PRO5_modified.apk release
+    client_fixed.apk release
 
-# Verify dex integrity
+# Verify
 echo ""
 echo "=== Verifying code integrity ==="
-ORIG_MD5=$(unzip -p new_app.apk classes.dex | md5sum | cut -d' ' -f1)
-MOD_MD5=$(unzip -p X-PRO5_modified.apk classes.dex | md5sum | cut -d' ' -f1)
+ORIG_MD5=$(unzip -p client_app.apk classes.dex | md5sum | cut -d' ' -f1)
+MOD_MD5=$(unzip -p client_fixed.apk classes.dex | md5sum | cut -d' ' -f1)
 if [ "$ORIG_MD5" = "$MOD_MD5" ]; then
-    echo "   [OK] DEX code is identical to original (md5: $ORIG_MD5)"
+    echo "   [OK] DEX code identical to original (md5: $ORIG_MD5)"
 else
-    echo "   [WARNING] DEX code differs! Original: $ORIG_MD5, Modified: $MOD_MD5"
+    echo "   [WARNING] DEX differs! Orig: $ORIG_MD5 Mod: $MOD_MD5"
 fi
 
-# Copy final file
-cp X-PRO5_modified.apk "../X-PRO5_8.00.222_sign.apk"
+cp client_fixed.apk "../PRO_VII_PAD_Elite.apk"
 
 echo ""
 echo "========================================"
 echo "  DONE! Modified APK is ready."
 echo "========================================"
 echo ""
-echo "File: $(cd .. && pwd)/X-PRO5_8.00.222_sign.apk"
-echo "Size: $(du -h ../X-PRO5_8.00.222_sign.apk | cut -f1)"
-echo ""
-echo "To install on device:  adb install X-PRO5_8.00.222_sign.apk"
+echo "File: $(cd .. && pwd)/PRO_VII_PAD_Elite.apk"
+echo "Size: $(du -h ../PRO_VII_PAD_Elite.apk | cut -f1)"

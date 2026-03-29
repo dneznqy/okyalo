@@ -70,7 +70,6 @@ echo "  Decompiling old APK (full)..."
 java -jar apktool.jar d old_app.apk -o old_decoded -f
 
 # Decompile NEW with --no-src to PRESERVE original dex/code
-# This is critical: the APK uses StubApp packer, full decompile breaks it
 echo "  Decompiling new APK (resources only, preserving code)..."
 java -jar apktool.jar d new_app.apk -o new_decoded --no-src -f
 
@@ -95,7 +94,11 @@ echo "   [OK] Logo assets replaced"
 sed -i.bak 's|android:scaleType="fitCenter"|android:scaleType="fitXY"|' new_decoded/res/layout/layout_splash.xml
 echo "   [OK] Layout scaleType fixed (fitCenter -> fitXY)"
 
-# 5) Fix custom attribute namespaces for build compatibility
+# 5) Make NFC optional (allows install on phones without NFC for testing)
+sed -i.bak 's|<uses-feature android:name="android.hardware.nfc.hce"/>|<uses-feature android:name="android.hardware.nfc.hce" android:required="false"/>|' new_decoded/AndroidManifest.xml
+echo "   [OK] NFC set to optional (allows install on any phone)"
+
+# 6) Fix custom attribute namespaces for build compatibility
 echo "   Fixing custom attribute namespaces..."
 COUNT=0
 for f in $(grep -rl 'http://schemas.android.com/apk/res/com\.cnlaunch' new_decoded/res/ 2>/dev/null || true); do

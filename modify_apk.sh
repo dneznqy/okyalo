@@ -113,17 +113,18 @@ else
     exit 1
 fi
 
-# Sign
+# Sign with CERT alias (matching original APK signature format)
+# This prevents Yandex Disk from misidentifying the file as JAR
 echo "[7/7] Signing APK..."
-if [ ! -f release.keystore ]; then
-    keytool -genkey -v -keystore release.keystore -alias release -keyalg RSA -keysize 2048 \
+if [ ! -f cert.keystore ]; then
+    keytool -genkey -v -keystore cert.keystore -alias CERT -keyalg RSA -keysize 2048 \
         -validity 10000 -storepass android -keypass android \
         -dname "CN=Launch, OU=Launch, O=Launch, L=Shenzhen, S=Guangdong, C=CN" 2>&1 | tail -1
 fi
 
 jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
-    -keystore release.keystore -storepass android -keypass android \
-    client_fixed.apk release
+    -keystore cert.keystore -storepass android -keypass android \
+    client_fixed.apk CERT
 
 # Verify
 echo ""
